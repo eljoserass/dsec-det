@@ -49,7 +49,7 @@ SUMMARY_FILE  = Path(__file__).parent / "download_summary.txt"
 
 s3 = boto3.client(
     "s3",
-    endpoint_url=f"https://{R2_ACCOUNT_ID}.eu.r2.cloudflarestorage.com",
+    endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
     aws_access_key_id=R2_ACCESS_KEY,
     aws_secret_access_key=R2_SECRET_KEY,
     region_name="auto",
@@ -177,7 +177,7 @@ def pipeline(split: str, mod: str):
 
         # 3. Collect extracted files and upload in parallel
         files = [
-            (p, f"{R2_PREFIX}/{split}/{mod}/{p.relative_to(tmpdir)}")
+            (p, f"{R2_PREFIX}/{p.relative_to(tmpdir)}")
             for p in Path(tmpdir).rglob("*")
             if p.is_file()
         ]
