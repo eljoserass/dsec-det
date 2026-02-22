@@ -34,8 +34,8 @@ MODALITIES = ["events", "images", "calibration", "object_detections", "left_imag
 SPLITS     = ["train", "test"]
 
 # Parallelism
-PIPELINE_WORKERS = 2    # how many (split, modality) pairs run simultaneously
-UPLOAD_WORKERS   = 16   # parallel file uploads per extracted zip
+PIPELINE_WORKERS = 3    # how many (split, modality) pairs run simultaneously
+UPLOAD_WORKERS   = 32   # parallel file uploads per extracted zip
 CHUNK_MB         = 32   # streaming download chunk size in MB
 # ---------------------------------------------------------------------------
 
@@ -72,9 +72,22 @@ def _write_progress():
     PROGRESS_FILE.write_text("\n".join(lines) + "\n")
 
 
+def _key_exists(r2_key: str) -> bool:
+    """Check if an object already exists in R2."""
+    try:
+        s3.head_object(Bucket=R2_BUCKET, Key=r2_key)
+        return True
+    except s3.exceptions.ClientError:
+        return False
+
+
 def upload_one(local_path: Path, r2_key: str):
+    if _key_exists(r2_key):
+        print(f"    — {r2_key} (exists, skipped)")
+        return False
     s3.upload_file(str(local_path), R2_BUCKET, r2_key)
     print(f"    ✓ {r2_key}")
+    return True
 
 
 def pipeline(split: str, mod: str):
