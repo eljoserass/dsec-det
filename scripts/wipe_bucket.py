@@ -16,7 +16,7 @@ DELETE_BATCH   = 1000    # S3 delete_objects max
 
 s3 = boto3.client(
     "s3",
-    endpoint_url=f"https://{R2_ACCOUNT_ID}.eu.r2.cloudflarestorage.com",
+    endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
     aws_access_key_id=R2_ACCESS_KEY,
     aws_secret_access_key=R2_SECRET_KEY,
     region_name="auto",
