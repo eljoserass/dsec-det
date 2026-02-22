@@ -177,7 +177,7 @@ def pipeline(split: str, mod: str):
 
         # 3. Collect extracted files and upload in parallel
         files = [
-            (p, f"{R2_PREFIX}/{p.relative_to(tmpdir)}")
+            (p, f"{R2_PREFIX}/{split}/{p.relative_to(tmpdir)}" if DATASET == "main" else f"{R2_PREFIX}/{p.relative_to(tmpdir)}")
             for p in Path(tmpdir).rglob("*")
             if p.is_file()
         ]
