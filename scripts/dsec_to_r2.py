@@ -112,7 +112,7 @@ def pipeline(split: str, mod: str):
         _progress[name] = "downloading..."
         _write_progress()
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir="/workspace") as tmpdir:
         zip_path = Path(tmpdir) / f"{split}_{mod}.zip"
 
         # 1. Stream download to disk (with resume on connection drop)
