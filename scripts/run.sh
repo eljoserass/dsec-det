@@ -3,6 +3,8 @@
 # Survives SSH disconnect. Check progress.txt for status.
 
 cd "$(dirname "$0")"
+# python3.13 -m venv .venv
+source venv/bin/activate
 pip install -r requirements.txt
 nohup python3 dsec_to_r2.py > output.log 2>&1 &
 echo "PID: $!"
