@@ -34,8 +34,8 @@ MODALITIES = ["events", "images", "calibration", "object_detections", "left_imag
 SPLITS     = ["train", "test"]
 
 # Parallelism
-PIPELINE_WORKERS = 3    # how many (split, modality) pairs run simultaneously
-UPLOAD_WORKERS   = 32   # parallel file uploads per extracted zip
+PIPELINE_WORKERS = 3   # how many (split, modality) pairs run simultaneously
+UPLOAD_WORKERS   = 8   # parallel file uploads per extracted zip
 CHUNK_MB         = 32   # streaming download chunk size in MB
 # ---------------------------------------------------------------------------
 
@@ -115,23 +115,48 @@ def pipeline(split: str, mod: str):
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / f"{split}_{mod}.zip"
 
-        # 1. Stream download to disk
+        # 1. Stream download to disk (with resume on connection drop)
+        MAX_RETRIES = 10
+        RETRY_DELAY = 5  # seconds between retries
         t0 = time.monotonic()
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(zip_path, "wb") as f:
-                downloaded = 0
-                last_progress_gb = 0
-                for chunk in r.iter_content(chunk_size=CHUNK_MB * 1024 * 1024):
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    gb = downloaded / 1e9
-                    if gb - last_progress_gb >= 1.0:
-                        with _lock:
-                            _progress[name] = f"downloading... {gb:.1f} GB"
-                            _write_progress()
-                        last_progress_gb = gb
-                    print(f"{tag} downloaded {gb:.2f} GB", end="\r")
+        downloaded = 0
+        last_progress_gb = 0
+        for attempt in range(1, MAX_RETRIES + 1):
+            headers = {"Range": f"bytes={downloaded}-"} if downloaded > 0 else {}
+            file_mode = "ab" if downloaded > 0 else "wb"
+            try:
+                with requests.get(url, stream=True, headers=headers, timeout=60) as r:
+                    if downloaded > 0 and r.status_code == 206:
+                        print(f"\n{tag} resuming from {downloaded/1e9:.2f} GB (attempt {attempt})")
+                    elif downloaded > 0 and r.status_code == 200:
+                        # Server doesn't support range requests; restart
+                        print(f"\n{tag} server doesn't support resume, restarting (attempt {attempt})")
+                        downloaded = 0
+                        last_progress_gb = 0
+                        file_mode = "wb"
+                    else:
+                        r.raise_for_status()
+                    with open(zip_path, file_mode) as f:
+                        for chunk in r.iter_content(chunk_size=CHUNK_MB * 1024 * 1024):
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            gb = downloaded / 1e9
+                            if gb - last_progress_gb >= 1.0:
+                                with _lock:
+                                    _progress[name] = f"downloading... {gb:.1f} GB"
+                                    _write_progress()
+                                last_progress_gb = gb
+                            print(f"{tag} downloaded {gb:.2f} GB", end="\r")
+                break  # download completed successfully
+            except (requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.ReadTimeout) as exc:
+                if attempt == MAX_RETRIES:
+                    raise
+                print(f"\n{tag} connection dropped at {downloaded/1e9:.2f} GB "
+                      f"({exc.__class__.__name__}), retrying in {RETRY_DELAY}s "
+                      f"(attempt {attempt}/{MAX_RETRIES})...")
+                time.sleep(RETRY_DELAY)
         stat["download_bytes"] = downloaded
         stat["download_secs"]  = time.monotonic() - t0
         dl_mb_s = (downloaded / 1e6) / stat["download_secs"] if stat["download_secs"] > 0 else 0
