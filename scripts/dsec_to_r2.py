@@ -29,8 +29,8 @@ R2_PREFIX      = "dsec"           # root prefix inside the bucket
 # What to download.
 # det  → events | images | calibration | object_detections | left_images_distorted
 # main → events | images | disparity   | optical_flow      | calibration
-DATASET    = "det"
-MODALITIES = ["events", "images", "calibration", "object_detections", "left_images_distorted"]
+DATASET    = "main"
+MODALITIES = ["events", "calibration", "images"]
 SPLITS     = ["train", "test"]
 
 # Parallelism
@@ -254,8 +254,10 @@ def write_summary(job_start: float, job_end: float):
 
     text = "\n".join(lines) + "\n"
     print("\n" + text)
-    SUMMARY_FILE.write_text(text)
-    print(f"Summary written to {SUMMARY_FILE}")
+    with SUMMARY_FILE.open("a") as f:
+        f.write(f"\n# Run at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(text)
+    print(f"Summary appended to {SUMMARY_FILE}")
 
 
 if __name__ == "__main__":
