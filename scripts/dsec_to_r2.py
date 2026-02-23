@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -59,6 +60,53 @@ s3 = boto3.client(
 _lock = threading.Lock()
 _pipeline_stats: list[dict] = []
 _progress: dict[str, str] = {}  # pipeline_name -> status string
+
+
+def preflight_check():
+    errors = []
+    warnings = []
+
+    # 1. Bucket name — underscores are not valid in R2/S3
+    if "_" in R2_BUCKET:
+        errors.append(f"R2_BUCKET='{R2_BUCKET}' contains underscores — use hyphens instead")
+
+    # 2. Required env vars are non-empty
+    for var, val in [("R2_ACCOUNT_ID", R2_ACCOUNT_ID), ("R2_ACCESS_KEY", R2_ACCESS_KEY),
+                     ("R2_SECRET_KEY", R2_SECRET_KEY), ("R2_BUCKET", R2_BUCKET)]:
+        if not val:
+            errors.append(f"{var} is not set")
+
+    # 3. Bucket reachable
+    try:
+        s3.head_bucket(Bucket=R2_BUCKET)
+    except Exception as e:
+        errors.append(f"Cannot reach bucket '{R2_BUCKET}': {e}")
+
+    # 4. Disk space on /workspace (need at least ~50 GB free for parallel downloads)
+    stat = shutil.disk_usage("/workspace")
+    free_gb = stat.free / 1e9
+    if free_gb < 20:
+        errors.append(f"Low disk space on /workspace: {free_gb:.1f} GB free (need ≥ 20 GB)")
+    elif free_gb < 60:
+        warnings.append(f"Disk space on /workspace: {free_gb:.1f} GB free — may be tight with {PIPELINE_WORKERS} parallel workers")
+
+    # 5. First download URL is reachable
+    sample_url = DATASET_URLS[DATASET].format(split=SPLITS[0], mod=MODALITIES[0])
+    try:
+        r = requests.head(sample_url, timeout=10, allow_redirects=True)
+        if r.status_code >= 400:
+            errors.append(f"Download URL returned HTTP {r.status_code}: {sample_url}")
+    except Exception as e:
+        errors.append(f"Download URL unreachable ({e}): {sample_url}")
+
+    for w in warnings:
+        print(f"  [WARN]  {w}")
+    for e in errors:
+        print(f"  [ERROR] {e}")
+
+    if errors:
+        raise SystemExit("Preflight failed — fix the above errors before running.")
+    print("  Preflight OK\n")
 
 
 def _write_progress():
@@ -263,6 +311,8 @@ def write_summary(job_start: float, job_end: float):
 if __name__ == "__main__":
     pairs = [(s, m) for s in SPLITS for m in MODALITIES]
     print(f"Running {len(pairs)} pipelines with {PIPELINE_WORKERS} workers: {pairs}")
+    print("Running preflight checks...")
+    preflight_check()
 
     # Init progress file
     with _lock:
